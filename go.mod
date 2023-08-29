@@ -1,5 +1,6 @@
 module GoLang/Redis-Basics
 
+
 go 1.21.0
 
 require (

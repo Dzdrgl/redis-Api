@@ -12,6 +12,7 @@ import (
 )
 
 var client *redis.Client
+var ctx = context.Background()
 
 // User struct is used for JSON serialization.
 type User struct {
@@ -46,6 +47,11 @@ type ErrorRespons struct {
 	Message string `json:"message"`
 }
 
+type CurrentUser struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 // Main func
 func main() {
 	// Initialize Redis client
@@ -54,11 +60,64 @@ func main() {
 	})
 
 	fmt.Println("Server is running on port 8080")
-	http.HandleFunc("/api/login", getUserByID)
+	http.HandleFunc("/api/login", Login)
 	http.HandleFunc("/users/", getUserByID)
 	http.HandleFunc("/users", getUsers)
 	http.HandleFunc("/users/new", createUser)
 	http.ListenAndServe(":8080", nil)
+}
+
+func Login(w http.ResponseWriter, r *http.Request) {
+
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "POST" {
+		WriteErrorResponse(w, 405, "Method not allowed")
+		return
+	}
+
+	var currentUser CurrentUser
+
+	err := json.NewDecoder(r.Body).Decode(&currentUser)
+	if err != nil {
+		WriteErrorResponse(w, 400, "Bad Request")
+		return
+	}
+
+	userIDs, err := client.SMembers(ctx, "users").Result()
+	if err != nil {
+		WriteErrorResponse(w, 500, "Server error")
+		return
+	}
+	if len(userIDs) == 0 {
+		WriteErrorResponse(w, 404, "No users found")
+		return
+	}
+
+	for _, idStr := range userIDs {
+		key := fmt.Sprintf("user:%s", idStr)
+		val, err := client.Get(ctx, key).Result()
+		if err != nil {
+			message := fmt.Sprintf("Error getting user with ID %s: %v", idStr, err)
+			WriteErrorResponse(w, 404, message)
+			continue
+		}
+
+		var user User
+		err = json.Unmarshal([]byte(val), &user)
+		if err != nil {
+			continue
+		}
+
+		if currentUser.Username == user.Username {
+			err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(currentUser.Password))
+			if err == nil {
+				WriteSuccessResponse(w, Result{ID: user.ID, Username: user.Username})
+				return
+			}
+		}
+	}
+	WriteErrorResponse(w, 401, "Username or password incorrect")
 }
 
 // WriteSuccessResponse generates an success response and converts it to JSON data
@@ -79,7 +138,7 @@ func WriteErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 
 // getUserByID handles requests to get a user by their ID.
 func getUserByID(response http.ResponseWriter, request *http.Request) {
-	ctx := context.Background()
+
 	response.Header().Set("Content-Type", "application/json")
 
 	if request.Method != "GET" {
@@ -127,7 +186,7 @@ func getUserByID(response http.ResponseWriter, request *http.Request) {
 }
 
 func getUsers(response http.ResponseWriter, request *http.Request) {
-	ctx := context.Background()
+
 	response.Header().Set("Content-Type", "application/json")
 
 	if request.Method != "GET" {
@@ -178,7 +237,7 @@ func getUsers(response http.ResponseWriter, request *http.Request) {
 }
 
 func createUser(response http.ResponseWriter, request *http.Request) {
-	ctx := context.Background()
+
 	response.Header().Set("Content-Type", "application/json")
 
 	// POST request kontrolü

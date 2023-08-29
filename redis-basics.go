@@ -74,8 +74,6 @@ func getUserByID(response http.ResponseWriter, request *http.Request) {
 	response.Header().Set("Content-Type", "application/json")
 
 	var errorResponse ErrorRespons
-	var successRespons SuccessRespons
-
 	if request.Method != "GET" {
 		errorResponse.Status = false
 		errorResponse.Message = "Method not allowed"
@@ -137,7 +135,6 @@ func getUsers(response http.ResponseWriter, request *http.Request) {
 	response.Header().Set("Content-Type", "application/json")
 
 	var errorResponse ErrorRespons
-	var successRespons SuccessRespons
 
 	var errCount int = 0
 

@@ -62,10 +62,19 @@ func main() {
 }
 
 // WriteJSONResponse writes a JSON response to the HTTP writer.
-func WriteJSONResponse(w http.ResponseWriter, r ErrorRespons) {
-	jsonData, _ := json.Marshal(r)
+
+func WriteSuccessResponse(w http.ResponseWriter, result Result) {
+	successRespons := SuccessRespons{Status: true, Result: result}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(jsonData)
+	w.WriteHeader(201)
+	json.NewEncoder(w).Encode(successRespons)
+}
+
+func WriteErrorResponse(w http.ResponseWriter, statusCode int, message string) {
+	errorResponse := ErrorRespons{Status: false, Message: message}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(errorResponse)
 }
 
 // getUserByID handles requests to get a user by their ID.
@@ -73,12 +82,8 @@ func getUserByID(response http.ResponseWriter, request *http.Request) {
 	ctx := context.Background()
 	response.Header().Set("Content-Type", "application/json")
 
-	var errorResponse ErrorRespons
 	if request.Method != "GET" {
-		errorResponse.Status = false
-		errorResponse.Message = "Method not allowed"
-		response.WriteHeader(405)
-		WriteJSONResponse(response, errorResponse)
+		WriteErrorResponse(response, 405, "Method not allowed")
 		return
 	}
 
@@ -88,10 +93,7 @@ func getUserByID(response http.ResponseWriter, request *http.Request) {
 	id, err := strconv.Atoi(idStr)
 
 	if err != nil {
-		errorResponse.Status = false
-		errorResponse.Message = "Invalid ID"
-		response.WriteHeader(400)
-		WriteJSONResponse(response, errorResponse)
+		WriteErrorResponse(response, 400, "Invalid ID")
 		return
 	}
 
@@ -100,10 +102,7 @@ func getUserByID(response http.ResponseWriter, request *http.Request) {
 	val, err := client.Get(ctx, key).Result()
 
 	if err != nil {
-		errorResponse.Status = false
-		errorResponse.Message = "User not found"
-		response.WriteHeader(404)
-		WriteJSONResponse(response, errorResponse)
+		WriteErrorResponse(response, 404, "User not found")
 		return
 	}
 
@@ -113,10 +112,7 @@ func getUserByID(response http.ResponseWriter, request *http.Request) {
 	// Deserialize the user data.
 	err = json.Unmarshal([]byte(val), &user)
 	if err != nil {
-		errorResponse.Status = false
-		errorResponse.Message = "Server error"
-		response.WriteHeader(500)
-		WriteJSONResponse(response, errorResponse)
+		WriteErrorResponse(response, 500, "Server error")
 		return
 	}
 
@@ -134,36 +130,29 @@ func getUsers(response http.ResponseWriter, request *http.Request) {
 	ctx := context.Background()
 	response.Header().Set("Content-Type", "application/json")
 
-	var errorResponse ErrorRespons
-
-	var errCount int = 0
-
 	if request.Method != "GET" {
-		errCount++
-		errorResponse.Status = false
-		errorResponse.Message = "Method not allowed"
-		response.WriteHeader(405)
-		WriteJSONResponse(response, errorResponse)
+		WriteErrorResponse(response, 405, "Method not allowed")
 		return
 	}
 
 	userIDs, err := client.SMembers(ctx, "users").Result()
 	if err != nil {
-		errCount++
+		WriteErrorResponse(response, 500, "Server error")
+		return
+	}
+	if len(userIDs) == 0 {
+		WriteErrorResponse(response, 404, "No users found")
 		return
 	}
 
 	var users []UserInfo
+
 	for _, idStr := range userIDs {
 		key := fmt.Sprintf("user:%s", idStr)
 		val, err := client.Get(ctx, key).Result()
 		if err != nil {
-			errCount++
 			message := fmt.Sprintf("Error getting user with ID %s: %v", idStr, err)
-			errorResponse.Status = false
-			errorResponse.Message = message
-			response.WriteHeader(404)
-			WriteJSONResponse(response, errorResponse)
+			WriteErrorResponse(response, 404, message)
 			continue
 		}
 
@@ -172,12 +161,8 @@ func getUsers(response http.ResponseWriter, request *http.Request) {
 
 		err = json.Unmarshal([]byte(val), &user)
 		if err != nil {
-			errCount++
 			message := fmt.Sprintf("Error unmarshalling user: %v", err)
-			errorResponse.Status = false
-			errorResponse.Message = message
-			response.WriteHeader(404)
-			WriteJSONResponse(response, errorResponse)
+			WriteErrorResponse(response, 404, message)
 			continue
 		}
 		userInfo.ID = user.ID
@@ -187,7 +172,6 @@ func getUsers(response http.ResponseWriter, request *http.Request) {
 
 		users = append(users, userInfo)
 	}
-
 	// Serialize and send the public user info.
 	json.NewEncoder(response).Encode(users)
 
@@ -197,111 +181,59 @@ func createUser(response http.ResponseWriter, request *http.Request) {
 	ctx := context.Background()
 	response.Header().Set("Content-Type", "application/json")
 
-	var errorResponse ErrorRespons
-	var successRespons SuccessRespons
-
-	var errCount int = 0
-
+	// POST request kontrolü
 	if request.Method != "POST" {
-		errCount++
-		errorResponse.Status = false
-		errorResponse.Message = "Method not allowed"
-		response.WriteHeader(405)
-		WriteJSONResponse(response, errorResponse)
+		WriteErrorResponse(response, 405, "Method not allowed")
 		return
 	}
 
+	// Request body'yi decode ediyoruz
 	var newUser User
 	err := json.NewDecoder(request.Body).Decode(&newUser)
 	if err != nil {
-		errCount++
-		errorResponse.Status = false
-		errorResponse.Message = "Bad Request"
-		response.WriteHeader(400)
-		WriteJSONResponse(response, errorResponse)
+		WriteErrorResponse(response, 400, "Bad Request")
 		return
 	}
-	//Kullanici adi ve sifre alanlarinin bos olup olmadiginin kontrolu yapiliyor.
+
+	// Username ve Password boş olmamalı
 	if newUser.Username == "" || newUser.Password == "" {
-		errCount++
-		errorResponse.Status = false
-		errorResponse.Message = "Username / Password is not empty "
-		response.WriteHeader(400)
-		WriteJSONResponse(response, errorResponse)
+		WriteErrorResponse(response, 400, "Username / Password must not be empty")
 		return
 	}
-	//Kullanici adi usernames keyi ile listeye ekleniyor. Eger result olarak 0 dönerse bu zaten listede bu değerde bir elemanın olduğu anlamına geliyor. Bu sayede username uniq bir yapıda oluyor.
+
+	// Username'in benzersiz olup olmadığını kontrol et
 	added, err := client.SAdd(ctx, "usernames", newUser.Username).Result()
+	if err != nil || added == 0 {
+		WriteErrorResponse(response, 400, "Username already exists")
+		return
+	}
+
+	// Şifreyi hashliyoruz
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
 	if err != nil {
-		errCount++
-		errorResponse.Status = false
-		errorResponse.Message = "Username isn't added"
-		response.WriteHeader(400)
-		WriteJSONResponse(response, errorResponse)
+		WriteErrorResponse(response, 400, "Password hashing failed")
 		return
 	}
-	if added == 0 {
-		errCount++
-		errorResponse.Status = false
-		errorResponse.Message = "Username exist"
-		response.WriteHeader(400)
-		WriteJSONResponse(response, errorResponse)
+	newUser.Password = string(hashedPassword)
+
+	// Kullanıcı ID'si oluşturuyoruz
+	id, err := client.Incr(ctx, "user_id").Result()
+	if err != nil {
+		WriteErrorResponse(response, 400, "Failed to generate user ID")
 		return
-
-	} else {
-		//Diğer değer atama işlemlerini else bloğunun altında yapmamın sebebi işlemler başarızı olsa bile user_id değeri artıyor ve gereksizdeğer atamaları yapılıyor bu şekilde bnların önüne geçtim.
-
-		//Kullanıcı şifrelerini  redise kaydedilmeden önce hashleniyor burada hashlemeyi bcrypt kütüphanesi ile yaptım.
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
-		if err != nil {
-			errCount++
-			errorResponse.Status = false
-			errorResponse.Message = "Password didn't hash"
-			response.WriteHeader(400)
-			WriteJSONResponse(response, errorResponse)
-			return
-		}
-
-		//Kulanıcının şifresi hashlenmiş olarak kullanıcının şifrsi ile değiştriliyor
-		newUser.Password = string(hashedPassword)
-
-		//Kullanıcıya id atamasının bir arttırılıp yapılması.
-		id, err := client.Incr(ctx, "user_id").Result()
-
-		if err != nil {
-			errCount++
-			errorResponse.Status = false
-			errorResponse.Message = ""
-			response.WriteHeader(400)
-			WriteJSONResponse(response, errorResponse)
-			return
-		} else {
-			newUser.ID = int(id)
-		}
-
-		//Oluşan User objesinin json formatına uyguns hale getriilmes'.
-		jsonData, err := json.Marshal(newUser)
-		if err != nil {
-			errCount++
-			errorResponse.Status = false
-			errorResponse.Message = "Server error"
-			response.WriteHeader(500)
-			WriteJSONResponse(response, errorResponse)
-			return
-		}
-
-		//json datayı sitring olarak SET ile user:id keyi ile redise kayıt etme işlemi.
-		key := fmt.Sprintf("user:%d", id)
-		client.Set(ctx, key, jsonData, 0)
-		client.SAdd(ctx, "users", fmt.Sprintf("%d", id))
-
-		// Oluşan kullancının kayıt işlemi başarılı olduğunda ekrana kayıt olan kulanıcın bilgilierinin json formatında gösterilmesi.
-		response.WriteHeader(http.StatusCreated)
-
-		successRespons.Status = true
-		successRespons.Result.ID = newUser.ID
-		successRespons.Result.Username = newUser.Username
-		json.NewEncoder(response).Encode(successRespons)
-
 	}
+	newUser.ID = int(id)
+
+	// Kullanıcıyı Redis'e kaydediyoruz
+	jsonData, err := json.Marshal(newUser)
+	if err != nil {
+		WriteErrorResponse(response, 500, "Server error")
+		return
+	}
+	key := fmt.Sprintf("user:%d", id)
+	client.Set(ctx, key, jsonData, 0)
+	client.SAdd(ctx, "users", fmt.Sprintf("%d", id))
+
+	// Başarılı yanıtı gönderiyoruz
+	WriteSuccessResponse(response, Result{ID: newUser.ID, Username: newUser.Username})
 }

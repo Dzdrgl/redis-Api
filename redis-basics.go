@@ -67,6 +67,7 @@ func main() {
 	http.ListenAndServe(":8080", nil)
 }
 
+<<<<<<< HEAD
 func Login(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
@@ -124,11 +125,21 @@ func Login(w http.ResponseWriter, r *http.Request) {
 func WriteSuccessResponse(w http.ResponseWriter, result Result) {
 	successRespons := SuccessRespons{Status: true, Result: result}
 	w.Header().Set("Content-Type", "application/json")
+=======
+// WriteJSONResponse writes a JSON response to the HTTP writer.
+
+func WriteSuccessResponse(w http.ResponseWriter, result Result) {
+	successRespons := SuccessRespons{Status: true, Result: result}
+	w.Header().Set("Content-Type", "application/json")
+>>>>>>> 0e890bc442ffdd718ce70a25928fe28bd74a0664
 	w.WriteHeader(201)
 	json.NewEncoder(w).Encode(successRespons)
 }
 
+<<<<<<< HEAD
 // WriteErrorResponse generates an error response and converts it to JSON data
+=======
+>>>>>>> 0e890bc442ffdd718ce70a25928fe28bd74a0664
 func WriteErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 	errorResponse := ErrorRespons{Status: false, Message: message}
 	w.Header().Set("Content-Type", "application/json")

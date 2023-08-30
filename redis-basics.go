@@ -30,9 +30,14 @@ type UserInfo struct {
 	Name     string `json:"name"`
 	Surname  string `json:"surname"`
 }
+
 type Result struct {
 	ID       int    `json:"id"`
 	Username string `json:"username"`
+}
+type CurrentResult struct {
+	Status bool     `json:"status"`
+	Result UserInfo `json:"result"`
 }
 
 // SuccessRespons holds the structure for success messages.
@@ -56,19 +61,45 @@ type CurrentUser struct {
 func main() {
 	// Initialize Redis client
 	client = redis.NewClient(&redis.Options{
-		Addr: "localhost:6379", // Redis server address
+		Addr: "localhost:6379",
 	})
 
 	fmt.Println("Server is running on port 8080")
-	http.HandleFunc("/api/login", Login)
-	http.HandleFunc("/users/", getUserByID)
-	http.HandleFunc("/users", getUsers)
-	http.HandleFunc("/users/new", createUser)
+	http.HandleFunc("/api/login", login)
+	http.HandleFunc("/api/users/current", getCurrentUser) // RESTful URL
+	http.HandleFunc("/api/users/", getUserByID)
+	http.HandleFunc("/api/users", getUsers)
+	http.HandleFunc("/api/users/new", createUser)
 	http.ListenAndServe(":8080", nil)
 }
 
-<<<<<<< HEAD
-func Login(w http.ResponseWriter, r *http.Request) {
+func getCurrentUser(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != "GET" {
+		WriteErrorResponse(w, 405, "Method not allowed")
+		return
+	}
+
+	redisCUser, err := client.Get(ctx, "currentUser").Result()
+	if err != nil {
+		WriteErrorResponse(w, 404, "No users found")
+		return
+	}
+
+	var currentUser UserInfo
+	if err := json.Unmarshal([]byte(redisCUser), &currentUser); err != nil {
+		WriteErrorResponse(w, 400, fmt.Sprintf("Error unmarshalling user: %v", err))
+		return
+	}
+
+	respons := CurrentResult{Status: true, Result: currentUser}
+	if err := json.NewEncoder(w).Encode(respons); err != nil {
+		WriteErrorResponse(w, 500, "Failed to write response")
+	}
+}
+
+func login(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -95,7 +126,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	for _, idStr := range userIDs {
 		key := fmt.Sprintf("user:%s", idStr)
 		val, err := client.Get(ctx, key).Result()
@@ -114,6 +144,14 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		if currentUser.Username == user.Username {
 			err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(currentUser.Password))
 			if err == nil {
+				// Kullanıcıyı Redis'e kaydediyoruz
+				jsonData, err := json.Marshal(UserInfo{ID: user.ID, Username: user.Username, Name: user.Name, Surname: user.Surname})
+				if err != nil {
+					WriteErrorResponse(w, 500, "Server error")
+					return
+				}
+				client.Set(ctx, "currentUser", jsonData, 0)
+
 				WriteSuccessResponse(w, Result{ID: user.ID, Username: user.Username})
 				return
 			}
@@ -126,21 +164,11 @@ func Login(w http.ResponseWriter, r *http.Request) {
 func WriteSuccessResponse(w http.ResponseWriter, result Result) {
 	successRespons := SuccessRespons{Status: true, Result: result}
 	w.Header().Set("Content-Type", "application/json")
-=======
-// WriteJSONResponse writes a JSON response to the HTTP writer.
-
-func WriteSuccessResponse(w http.ResponseWriter, result Result) {
-	successRespons := SuccessRespons{Status: true, Result: result}
-	w.Header().Set("Content-Type", "application/json")
->>>>>>> 0e890bc442ffdd718ce70a25928fe28bd74a0664
-	w.WriteHeader(201)
+	w.WriteHeader(200)
 	json.NewEncoder(w).Encode(successRespons)
 }
 
-<<<<<<< HEAD
 // WriteErrorResponse generates an error response and converts it to JSON data
-=======
->>>>>>> 0e890bc442ffdd718ce70a25928fe28bd74a0664
 func WriteErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 	errorResponse := ErrorRespons{Status: false, Message: message}
 	w.Header().Set("Content-Type", "application/json")
@@ -159,7 +187,7 @@ func getUserByID(response http.ResponseWriter, request *http.Request) {
 	}
 
 	// Extract user ID from the URL path.
-	idStr := request.URL.Path[len("/users/"):]
+	idStr := request.URL.Path[len("/api/users/"):]
 	// Convert the ID to integer.
 	id, err := strconv.Atoi(idStr)
 

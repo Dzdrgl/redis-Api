@@ -95,6 +95,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+
 	for _, idStr := range userIDs {
 		key := fmt.Sprintf("user:%s", idStr)
 		val, err := client.Get(ctx, key).Result()

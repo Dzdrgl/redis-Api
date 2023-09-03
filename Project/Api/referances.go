@@ -18,19 +18,12 @@ var SuccessRespons func(w http.ResponseWriter, result models.SuccessRespons) = u
 
 var Client *redis.Client
 
-const (
-	emptyErr         = "Username/Password is empty"
-	existsErr        = "Username already exists"
-	usernameNotFound = "Username doesn't exist"
-	wrongPassword    = "Wrong Password"
-)
-
 func ValidateUser(newUser *models.User) error {
 	if newUser.Username == "" || newUser.Password == "" {
-		return fmt.Errorf(emptyErr)
+		return fmt.Errorf("Username/Password is empty")
 	}
 	if UsernameExists(newUser.Username) {
-		return fmt.Errorf(existsErr)
+		return fmt.Errorf("Username already exists")
 	}
 	return nil
 }
@@ -42,6 +35,9 @@ func UsernameExists(username string) bool {
 
 func StoreUser(newUser *models.User) error {
 	newUser.ID = NextID()
+	if newUser.ID == 0 {
+		return fmt.Errorf("UserId  == 0")
+	}
 	hashedPass, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -53,56 +49,53 @@ func StoreUser(newUser *models.User) error {
 	}
 
 	keyID := fmt.Sprintf("user:%d", newUser.ID)
-	keyUsername := fmt.Sprintf("user:%s", newUser.Username)
+	keyUsername := fmt.Sprintf("username:%s", newUser.Username)
 
 	pipe := Client.Pipeline()
 	pipe.Set(keyID, jsonData, 0)
-	pipe.SAdd("usernames", newUser.Username)
 	pipe.Set(keyUsername, newUser.ID, 0)
+	pipe.SAdd("usernames", newUser.Username)
 
-	_, err = pipe.Exec()
-	return err
+	cmders, err := pipe.Exec()
+	if err != nil {
+		return err
+	}
+
+	for _, cmder := range cmders {
+		if cmder.Err() != nil {
+			return fmt.Errorf("Pipeline command failed: %v", cmder.Err())
+		}
+	}
+	return nil
+
 }
-func SearchByUserID(id int) (models.User, error) {
-	var user models.User
+func SearchByUserID(id int) (*models.User, error) {
 	key := fmt.Sprintf("user:%d", id)
-	val, err := Client.Get(key).Result()
-	if err != nil {
-		return user, err
-	}
-	err = json.Unmarshal([]byte(val), &user)
-	if err != nil {
-		return user, err
-	}
-	return user, nil
+	return getUser(key)
 }
-func GetUserID(username string) (int, error) {
-	key := fmt.Sprintf("user:%s", username)
+func GetIDByUsername(username string) (int, error) {
+	key := fmt.Sprintf("username:%s", username)
 	val, err := Client.Get(key).Result()
-	id, err := strconv.Atoi(val)
 	if err != nil {
-		return id, err
+		return 0, err
 	}
-	return id, nil
+	return strconv.Atoi(val)
 }
 
-func Login(username, password string) (models.User, error) {
+func Login(username, password string) (*models.User, error) {
 	if !UsernameExists(username) {
-		return models.User{}, fmt.Errorf("Username not found")
+		return nil, fmt.Errorf("Username not found")
 	}
-	user_id, err := GetUserID(username)
+	userID, err := GetIDByUsername(username)
 	if err != nil {
-		return models.User{}, fmt.Errorf("Error retrieving user ID")
+		return nil, fmt.Errorf("Error retrieving user ID")
 	}
-	user, err := SearchByUserID(user_id)
+	user, err := SearchByUserID(userID)
 	if err != nil {
-		return models.User{}, fmt.Errorf("Error retrieving user details")
-	}
-	if err != nil {
-		return models.User{}, err
+		return nil, err
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		return models.User{}, fmt.Errorf("Incorrect password")
+		return nil, fmt.Errorf("Incorrect password")
 	}
 	return user, nil
 }
@@ -113,4 +106,61 @@ func NextID() int {
 		return 0
 	}
 	return int(userId)
+}
+
+func getUser(key string) (*models.User, error) {
+	var user models.User
+	val, err := Client.Get(key).Result()
+	if err != nil {
+		return nil, fmt.Errorf("Error retrieving user details: %v", err)
+	}
+	if err := json.Unmarshal([]byte(val), &user); err != nil {
+		return nil, fmt.Errorf("Error unmarshaling user data: %v", err)
+	}
+	return &user, nil
+}
+
+func Update(userInfo *models.User) (*models.User, error) {
+	val, err := Client.Get("currentUser").Result()
+	if err != nil {
+		return nil, fmt.Errorf("No logged-in user found")
+	}
+
+	var currentUser models.User
+	if err := json.Unmarshal([]byte(val), &currentUser); err != nil {
+		return nil, fmt.Errorf("Error unmarshaling current user data: %v", err)
+	}
+
+	if userInfo.Username != "" && userInfo.Username != currentUser.Username {
+		if UsernameExists(userInfo.Username) {
+			return nil, fmt.Errorf("Username already exists")
+		}
+		currentUser.Username = userInfo.Username
+	}
+
+	if userInfo.Password != "" {
+		hashedPass, err := bcrypt.GenerateFromPassword([]byte(userInfo.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("Error hashing password: %v", err)
+		}
+		currentUser.Password = string(hashedPass)
+	}
+	if userInfo.Name != "" {
+		currentUser.Name = userInfo.Name
+	}
+
+	if userInfo.Surname != "" {
+		currentUser.Surname = userInfo.Surname
+	}
+
+	jsonData, err := json.Marshal(currentUser)
+	if err != nil {
+		return nil, fmt.Errorf("Error marshaling user to JSON")
+	}
+
+	key := fmt.Sprintf("user:%d", currentUser.ID)
+	if err := Client.Set(key, jsonData, 0).Err(); err != nil {
+		return nil, fmt.Errorf("Error updating user in Redis")
+	}
+	return &currentUser, nil
 }

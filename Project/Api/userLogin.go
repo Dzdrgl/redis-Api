@@ -29,11 +29,18 @@ func UserLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, err := Login(creds.Username, creds.Password)
-
 	if err != nil {
 		ErrorRespons(w, http.StatusUnauthorized, err.Error())
 		return
 	}
+
+	jsonData, err := json.Marshal(user)
+	if err != nil {
+		ErrorRespons(w, http.StatusBadRequest, "Invalid JSON format")
+		return
+	}
+	Client.Set("currentUser", jsonData, 0)
+
 	userMap := map[string]interface{}{
 		"ID":       user.ID,
 		"Username": user.Username,

@@ -2,44 +2,32 @@ package api
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"fmt"
+	"log"
 	"net/http"
 
-	models "github.com/Dzdrgl/redis-Api/Models"
+	models "github.com/Dzdrgl/redis-Api/models"
+	"golang.org/x/crypto/bcrypt"
 )
 
-func UserLogin(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) UserLogin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if r.Method != "POST" {
-		ErrorRespons(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-	body, err := ioutil.ReadAll(r.Body)
-	defer r.Body.Close()
-	if err != nil {
-		ErrorRespons(w, http.StatusInternalServerError, "Error reading request")
+		errorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 	var creds models.User
-	err = json.Unmarshal(body, &creds)
-	if err != nil {
-		ErrorRespons(w, http.StatusBadRequest, "Invalid JSON format")
+	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
+		errorResponse(w, http.StatusBadRequest, "Error unmarshaling JSON")
 		return
 	}
 
-	user, err := Login(creds.Username, creds.Password)
+	user, err := h.login(creds.Username, creds.Password)
 	if err != nil {
-		ErrorRespons(w, http.StatusUnauthorized, err.Error())
+		errorResponse(w, http.StatusUnauthorized, err.Error())
 		return
 	}
-
-	jsonData, err := json.Marshal(user)
-	if err != nil {
-		ErrorRespons(w, http.StatusBadRequest, "Invalid JSON format")
-		return
-	}
-	Client.Set("currentUser", jsonData, 0)
 
 	userMap := map[string]interface{}{
 		"ID":       user.ID,
@@ -51,5 +39,36 @@ func UserLogin(w http.ResponseWriter, r *http.Request) {
 		Result: userMap,
 	}
 
-	SuccessRespons(w, userResult)
+	successResponse(w, userResult)
+}
+
+func (h *Handler) login(username, password string) (*models.User, error) {
+
+	userID, err := h.getIDByUsername(username)
+	if err != nil {
+		return nil, fmt.Errorf("Error retrieving user ID")
+	}
+
+	key := fmt.Sprintf("user%s", userID)
+	hashedPass, err := h.client.HGet(key, "password").Result()
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(hashedPass), []byte(password)); err != nil {
+		return nil, fmt.Errorf("Incorrect password")
+	}
+
+	_, err = h.client.Set("currentUserId", userID, 0).Result()
+	if err != nil {
+		return nil, fmt.Errorf("Error setting current user ID: %v", err)
+	}
+
+	user, err := h.getUser(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
 }

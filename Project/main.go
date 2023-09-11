@@ -4,18 +4,22 @@ import (
 	"fmt"
 	"net/http"
 
-	api "github.com/Dzdrgl/redis-Api/Api"
+	api "github.com/Dzdrgl/redis-Api/api"
 	"github.com/go-redis/redis"
 )
 
 func main() {
-	api.Client = redis.NewClient(&redis.Options{
+	client := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
 	})
-	http.HandleFunc("/v2/users/", api.GetUserByID)
-	http.HandleFunc("/v2/users/update", api.UpdateUser)
-	http.HandleFunc("/v2/users/new", api.CreateUser)
-	http.HandleFunc("/v2/users/login", api.UserLogin)
+	apiHandler := api.NewHandler(client)
+
+	http.HandleFunc("/v2/users/leaderboard", apiHandler.Leaderboard)
+	http.HandleFunc("/v2/match", apiHandler.GetMatchInfo)
+	http.HandleFunc("/v2/users/", apiHandler.GetUserByID)
+	http.HandleFunc("/v2/users/update", apiHandler.UpdateUser)
+	http.HandleFunc("/v2/users/new", apiHandler.CreateUser)
+	http.HandleFunc("/v2/users/login", apiHandler.UserLogin)
 	fmt.Println("Server is running on port 9090")
 	http.ListenAndServe(":9090", nil)
 }

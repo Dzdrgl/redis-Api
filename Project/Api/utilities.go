@@ -134,6 +134,7 @@ func (h *Handler) getUserScore(id int) (int, error) {
 }
 
 func (h *Handler) update(userInfo *models.User) (*models.User, error) {
+
 	Id, err := h.client.Get("currentUserId").Result()
 	if err != nil {
 		return nil, err
@@ -183,8 +184,6 @@ func (h *Handler) update(userInfo *models.User) (*models.User, error) {
 
 	return updatedUser, nil
 }
-
-//
 
 func (h *Handler) nextID() string {
 	userId, err := h.client.Incr("user_id").Result()

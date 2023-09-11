@@ -136,7 +136,8 @@ func (h *Handler) incScore(userKey string, points int) error {
 
 func (h *Handler) leaderboardList(leaderboard []string) ([]map[string]interface{}, error) {
 	var list []map[string]interface{}
-	for i, user := range leaderboard {
+	for _, user := range leaderboard {
+		rank, err := h.client.ZRevRank("leaderboard", user).Result()
 		id, err := h.getUserInfo(user, "id")
 		if err != nil {
 			return nil, err
@@ -147,7 +148,7 @@ func (h *Handler) leaderboardList(leaderboard []string) ([]map[string]interface{
 		}
 
 		userInfo := map[string]interface{}{
-			"rank":     i + 1,
+			"rank":     rank + 1,
 			"id":       id,
 			"username": username,
 		}

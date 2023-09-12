@@ -12,10 +12,10 @@ import (
 )
 
 type MatchInfo struct {
-	Firstuserid     int `json:"firstuserid"`
-	Seconduserid    int `json:"seconduserid"`
-	Firstuserscore  int `json:"firstuserscore"`
-	Seconduserscore int `json:"seconduserscore"`
+	FirstUserId     int `json:"firstuserid"`
+	SecondUserId    int `json:"seconduserid"`
+	FirstUserScore  int `json:"firstuserscore"`
+	SecondUserScore int `json:"seconduserscore"`
 }
 
 type LbInfo struct {
@@ -75,11 +75,6 @@ func (h *Handler) GetMatchInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if match.Firstuserid == match.Seconduserid {
-		errorResponse(w, http.StatusBadRequest, "Both user IDs are the same!")
-		return
-	}
-
 	if err := h.updateScore(match); err != nil {
 		errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
@@ -90,8 +85,8 @@ func (h *Handler) GetMatchInfo(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) updateScore(match MatchInfo) error {
 
-	firstUserKey := fmt.Sprintf("user%d", match.Firstuserid)
-	secondUserKey := fmt.Sprintf("user%d", match.Seconduserid)
+	firstUserKey := fmt.Sprintf("user%d", match.FirstUserId)
+	secondUserKey := fmt.Sprintf("user%d", match.SecondUserId)
 
 	if exists, err := h.client.Exists(firstUserKey).Result(); err != nil || exists == 0 {
 		return errors.New("First user does not exist")
@@ -101,11 +96,11 @@ func (h *Handler) updateScore(match MatchInfo) error {
 		return errors.New("Second user does not exist")
 	}
 
-	if match.Firstuserscore > match.Seconduserscore {
+	if match.FirstUserScore > match.SecondUserScore {
 		if err := h.incScore(firstUserKey, 3); err != nil {
 			return err
 		}
-	} else if match.Firstuserscore < match.Seconduserscore {
+	} else if match.FirstUserScore < match.SecondUserScore {
 		if err := h.incScore(secondUserKey, 3); err != nil {
 			return err
 		}

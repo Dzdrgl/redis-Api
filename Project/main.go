@@ -20,6 +20,7 @@ func main() {
 	http.HandleFunc("/v2/users/update", apiHandler.UpdateUser)
 	http.HandleFunc("/v2/users/new", apiHandler.CreateUser)
 	http.HandleFunc("/v2/users/login", apiHandler.UserLogin)
+	http.HandleFunc("/v2/simulator", apiHandler.Simulator)
 	fmt.Println("Server is running on port 9090")
 	http.ListenAndServe(":9090", nil)
 }

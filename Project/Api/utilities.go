@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"strconv"
 
@@ -46,7 +48,6 @@ func (h *Handler) storeUser(newUser *models.User) error {
 	if newUser.ID == "" {
 		return fmt.Errorf("UserId == 0")
 	}
-
 	hashedPass, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -213,4 +214,29 @@ func writeSuccessResponse(w http.ResponseWriter, result models.SuccessRespons) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(201)
 	json.NewEncoder(w).Encode(result)
+}
+
+type NameSurname struct {
+	Names    []string `json:"names"`
+	Surnames []string `json:"surnames"`
+}
+
+func randomNameAndSurname() (string, string) {
+	file, err := ioutil.ReadFile("../namesAndSurnames.json")
+	if err != nil {
+		fmt.Println("Error reading file:", err)
+		return "", ""
+	}
+
+	var data NameSurname
+	err = json.Unmarshal(file, &data)
+	if err != nil {
+		fmt.Println("Error unmarshalling:", err)
+		return "", ""
+	}
+
+	randomName := data.Names[rand.Intn(len(data.Names))]
+	randomSurname := data.Surnames[rand.Intn(len(data.Surnames))]
+
+	return randomName, randomSurname
 }

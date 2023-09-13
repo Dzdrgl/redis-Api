@@ -147,7 +147,7 @@ func (h *Handler) getUserInfo(key, field string) (string, error) {
 	return val, nil
 }
 
-// ! LOGIN USER FUNCTIONS
+// ! LOGIN USER HANDLER FUNCTIONS
 
 func (h *Handler) login(username, password string) (*models.User, error) {
 	userID, err := h.getIDByUsername(username)
@@ -179,7 +179,7 @@ func (h *Handler) login(username, password string) (*models.User, error) {
 	return user, nil
 }
 
-// ! UPDATE USER INFO
+// ! UPDATE USER HANDLER FUNCTIONS
 func (h *Handler) update(userInfo *models.User) (*models.User, error) {
 
 	Id, err := h.client.Get("currentUserId").Result()
@@ -235,18 +235,37 @@ func (h *Handler) update(userInfo *models.User) (*models.User, error) {
 //! SECTION: SIMULATION HANDLER FUNCTIONS
 
 func (h *Handler) matchSimulation() error {
-	userCount, err := h.client.Get("user_id").Result()
+	lastUserID, err := h.client.Get("user_id").Result()
 	if err != nil {
 		return fmt.Errorf("User count error: %v", err)
 	}
 
-	countInt, err := strconv.Atoi(userCount)
+	lastID, err := strconv.Atoi(lastUserID)
 	if err != nil {
 		return fmt.Errorf("Conversion error: %v", err)
 	}
+	//! Eger yeni kullanıcı eklendiğinde sadece eklenenler arasında maç yaptırmak için.
+	/*
+		!func (h *Handler) matchSimulation(userCount int) error {
+		....
+			for i := lastID ; i < userCount; i++ {
+				for j := i + 1; j <= userCount; j++ {
+					var matchInfo models.MatchInfo
+					matchInfo.FirstUserId = i
+					matchInfo.FirstUserScore = rand.Intn(10)
+					matchInfo.SecondUserId = j
+					matchInfo.SecondUserScore = rand.Intn(10)
 
-	for i := 1; i < countInt; i++ {
-		for j := i + 1; j <= countInt; j++ {
+					if err := h.updateScore(matchInfo); err != nil {
+						return fmt.Errorf("Failed to update score: %v", err)
+					}
+				}
+			}
+		....
+		}
+	*/
+	for i := 1; i < lastID; i++ {
+		for j := i + 1; j <= lastID; j++ {
 			var matchInfo models.MatchInfo
 			matchInfo.FirstUserId = i
 			matchInfo.FirstUserScore = rand.Intn(10)

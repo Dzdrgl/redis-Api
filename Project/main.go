@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 
 	api "github.com/Dzdrgl/redis-Api/api"
@@ -14,13 +14,19 @@ func main() {
 	})
 	apiHandler := api.NewHandler(client)
 
-	http.HandleFunc("/v2/users/leaderboard", apiHandler.Leaderboard)
-	http.HandleFunc("/v2/match", apiHandler.GetMatchInfo)
-	http.HandleFunc("/v2/users/", apiHandler.GetUserByID)
-	http.HandleFunc("/v2/users/update", apiHandler.UpdateUser)
+	//? USER TRANSACTIONS
+	http.HandleFunc("/v2/users/leaderboard", apiHandler.FetchLeaderboardPage)
+	http.HandleFunc("/v2/users/{id:[0-9]+}", apiHandler.RetrieveUserByID)
 	http.HandleFunc("/v2/users/new", apiHandler.CreateUser)
+	http.HandleFunc("/v2/users/update", apiHandler.UpdateUser)
 	http.HandleFunc("/v2/users/login", apiHandler.UserLogin)
-	http.HandleFunc("/v2/simulator", apiHandler.Simulator)
-	fmt.Println("Server is running on port 9090")
+
+	//? MATCH INFO
+	http.HandleFunc("/v2/match", apiHandler.GetMatchInfo)
+
+	//? SIMULATOR
+	http.HandleFunc("/v2/simulator", apiHandler.Simulation)
+
+	log.Println("Server is running on port 9090")
 	http.ListenAndServe(":9090", nil)
 }

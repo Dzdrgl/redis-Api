@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/onsi/gomega v1.27.10 // indirect
 )

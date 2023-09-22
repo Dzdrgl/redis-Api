@@ -1,11 +1,10 @@
 package models
 
-type SuccessRespons struct {
+type SuccessResponse struct {
 	Status bool        `json:"status"`
 	Result interface{} `json:"result"`
 }
-
-type ErrorRespons struct {
+type ErrorResponse struct {
 	Status  bool   `json:"status"`
 	Message string `json:"message"`
 }

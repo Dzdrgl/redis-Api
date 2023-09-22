@@ -8,9 +8,15 @@ import (
 	"github.com/Dzdrgl/redis-Api/models"
 )
 
-func (h *Handler) Simulation(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) HandleSimulation(w http.ResponseWriter, r *http.Request) {
 	log.Println("Simulation - Called")
 	w.Header().Set(ContentType, ApplicationJSON)
+
+	// token := r.Header.Get("Authorization")
+	// if h.ValidateToken(token) == false {
+	// 	errorResponse(w, http.StatusNotFound, InvalidTokenMsg)
+	// 	return
+	// }
 
 	if r.Method != http.MethodPost {
 		log.Printf("Simulation - Method not allowed")
@@ -38,7 +44,7 @@ func (h *Handler) Simulation(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusInternalServerError, "Simulation failed during match operation.")
 		return
 	}
-	result := models.SuccessRespons{
+	result := models.SuccessResponse{
 		Status: true,
 		Result: "Simulation completed successfully.",
 	}

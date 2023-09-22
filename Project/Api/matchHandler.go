@@ -8,51 +8,58 @@ import (
 	"github.com/Dzdrgl/redis-Api/models"
 )
 
-func (h *Handler) FetchLeaderboardPage(w http.ResponseWriter, r *http.Request) {
-	log.Println("Fetchleaderboard - Called")
+func (h *Handler) HandleLeaderboard(w http.ResponseWriter, r *http.Request) {
+	log.Println("Leaderboard - Called")
 	w.Header().Set(ContentType, ApplicationJSON)
 
+	token := r.Header.Get("Authorization")
+	if h.ValidateToken(token) == false {
+		errorResponse(w, http.StatusNotFound, InvalidTokenMsg)
+		return
+	}
 	if r.Method != http.MethodPost {
 		log.Println("Fetchleaderboard - Method not allowed")
-		errorResponse(w, http.StatusMethodNotAllowed, MethodErr)
+		errorResponse(w, http.StatusMethodNotAllowed, MethodNotAllowedMsg)
 		return
 	}
 
 	var leaderbordInfo models.LeaderbordInfo
 	if err := json.NewDecoder(r.Body).Decode(&leaderbordInfo); err != nil {
 		log.Printf("Fetchleaderboard - Invalid JSON format")
-		errorResponse(w, http.StatusNotFound, JsonErr)
+		errorResponse(w, http.StatusNotFound, InvalidJSONInputMsg)
 		return
 	}
 
-	startIndex := leaderbordInfo.Count * (leaderbordInfo.Page - 1)
-	endIndex := startIndex + leaderbordInfo.Count - 1
-
-	leaderboard, err := h.client.ZRevRange("leaderboard", startIndex, endIndex).Result()
-	if err != nil {
-		log.Println("Error fetching leaderboard:", err)
-		errorResponse(w, http.StatusNotFound, "Could not fetch leaderboard")
+	if leaderbordInfo.Count == 0 || leaderbordInfo.Page == 0 {
+		log.Printf("Fetchleaderboard - The number of pages and users should not be zero..")
+		errorResponse(w, http.StatusNotFound, "The number of pages and users should not be zero.")
 		return
 	}
 
-	list, err := h.leaderboardList(leaderboard)
+	leaderboard, err := h.BuildLeaderboardList(leaderbordInfo)
 	if err != nil {
 		log.Println("Error building leaderboard list:", err)
 		errorResponse(w, http.StatusNotFound, "Could not build leaderboard list")
 		return
 	}
 
-	result := models.SuccessRespons{
+	result := models.SuccessResponse{
 		Status: true,
-		Result: list,
+		Result: leaderboard,
 	}
 	log.Println("Leaderboard page %d fetch successfuly.", leaderbordInfo.Count)
 	successResponse(w, result)
 }
 
-func (h *Handler) GetMatchInfo(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) HandleMatch(w http.ResponseWriter, r *http.Request) {
 	log.Println("GetMatchInfo - Called")
 	w.Header().Set(ContentType, ApplicationJSON)
+
+	token := r.Header.Get("Authorization")
+	if h.ValidateToken(token) == false {
+		errorResponse(w, http.StatusNotFound, InvalidTokenMsg)
+		return
+	}
 
 	if r.Method != http.MethodPost {
 		log.Printf("GetMatchInfo - Method not allowed: %s", r.Method)
@@ -67,11 +74,11 @@ func (h *Handler) GetMatchInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.updateScore(match); err != nil {
+	if err := h.UpdateScore(match); err != nil {
 		log.Printf("GetMatchInfo - update score failed : %s", err)
 		errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	log.Printf("GetMatchInfo - User score save succesfuly complated.")
-	successResponse(w, models.SuccessRespons{Status: true, Result: nil})
+	successResponse(w, models.SuccessResponse{Status: true, Result: "User score save succesfuly"})
 }

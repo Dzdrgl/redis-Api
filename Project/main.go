@@ -15,17 +15,19 @@ func main() {
 	apiHandler := api.NewHandler(client)
 
 	//? USER TRANSACTIONS
-	http.HandleFunc("/v2/users/leaderboard", apiHandler.FetchLeaderboardPage)
-	http.HandleFunc("/v2/users/", apiHandler.RetrieveUserByID)
-	http.HandleFunc("/v2/users/new", apiHandler.CreateUser)
-	http.HandleFunc("/v2/users/update", apiHandler.UpdateUser)
-	http.HandleFunc("/v2/users/login", apiHandler.UserLogin)
+	http.HandleFunc("/v2/users/leaderboard", apiHandler.HandleLeaderboard)
+	http.HandleFunc("/v2/users/", apiHandler.HandleRetrieveUser)
+	http.HandleFunc("/v2/users/new", apiHandler.HandleCreateUser)
+	http.HandleFunc("/v2/users/update", apiHandler.HandleUpdateUser)
+	http.HandleFunc("/v2/users/login", apiHandler.HandleUserLogin)
 
 	//? MATCH INFO
-	http.HandleFunc("/v2/match", apiHandler.GetMatchInfo)
+	http.HandleFunc("/v2/match", apiHandler.HandleMatch)
 
 	//? SIMULATOR
-	http.HandleFunc("/v2/simulator", apiHandler.Simulation)
+	http.HandleFunc("/v2/simulator", apiHandler.HandleSimulation)
+	//?Friendship
+	http.HandleFunc("/v2/users/search", apiHandler.HandlerSearchUser)
 
 	log.Println("Server is running on port 9090")
 	http.ListenAndServe(":9090", nil)

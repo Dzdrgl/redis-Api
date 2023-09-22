@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-redis/redis"
 
@@ -20,9 +21,23 @@ import (
 const (
 	ContentType     = "Content-Type"
 	ApplicationJSON = "application/json"
-	MethodErr       = "Method not allowed"
-	JsonErr         = "Invalid JSON format"
+
+	InvalidTokenMsg        = "Invalid token"
+	InvalidJSONInputMsg    = "Invalid JSON input"
+	MethodNotAllowedMsg    = "Method not allowed"
+	InternalServerErrorMsg = "Internal server error"
+	UsernameAlreadyExists  = "Username already exists"
+	InvalidID              = "Invalid ID Format"
+	IDNotFound             = "User Id not found"
 )
+const (
+	MethodErr = "Method not allowed"
+	JsonErr   = "Invalid JSON format"
+)
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 type Handler struct {
 	client *redis.Client
@@ -32,12 +47,48 @@ func NewHandler(client *redis.Client) *Handler {
 	return &Handler{client: client}
 }
 
-// !SECTION: CREATE USER FUNCTIONS.
+// !Create
+func (h *Handler) CreateUserInRedis(user *models.User) (string, error) {
+	if err := h.validateUser(user.Username, user.Password); err != nil {
+		return "", err
+	}
+	user.ID = h.generateNextUserID()
+	hashedPassword, err := HashPassword(user.Password)
+
+	user.Password = hashedPassword
+	userToken, err := h.storeUserInRedis(user)
+	if err != nil {
+		return "", err
+	}
+	return userToken, nil
+}
+
+func (h *Handler) storeUserInRedis(newUser *models.User) (string, error) {
+	userToken := h.createToken()
+	userKey := fmt.Sprintf("user:%s", userToken)
+	keyId := fmt.Sprintf("userID:%s", newUser.ID)
+	keyUsername := fmt.Sprintf("username:%s", newUser.Username)
+	pipe := h.client.Pipeline()
+	pipe.HMSet(userKey, map[string]interface{}{
+		"id":       newUser.ID,
+		"username": newUser.Username,
+		"password": newUser.Password,
+		"name":     newUser.Name,
+		"surname":  newUser.Surname,
+	})
+	pipe.Set(keyUsername, userToken, 0)
+	pipe.Set(keyId, userToken, 0)
+	_, err := pipe.Exec()
+	if err != nil {
+		return "", err
+	}
+	return userToken, nil
+}
+
 func (h *Handler) validateUser(username, password string) error {
 	if username == "" || password == "" {
 		return errors.New("Username and password must not be empty")
 	}
-
 	key := fmt.Sprintf("username:%s", username)
 	_, err := h.client.Get(key).Result()
 	if err == redis.Nil {
@@ -49,7 +100,7 @@ func (h *Handler) validateUser(username, password string) error {
 	return errors.New("Username already exists")
 }
 
-func (h *Handler) nextID() string {
+func (h *Handler) generateNextUserID() string {
 	userId, err := h.client.Incr("user_id").Result()
 	if err != nil {
 		return ""
@@ -57,108 +108,47 @@ func (h *Handler) nextID() string {
 	return strconv.FormatInt(userId, 10)
 }
 
-func hashingPassword(password string) ([]byte, error) {
-	hashedPass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return nil, fmt.Errorf("Error hashing the password: %v", err)
-	}
-	return hashedPass, nil
-}
+// !Fetch
 
-func (h *Handler) createUser(newUser *models.User) error {
-	newUser.ID = h.nextID()
-	if newUser.ID == "" {
-		return fmt.Errorf("Failed to generate user ID")
-	}
-
-	hashedPass, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return err
-	}
-
-	newUser.Password = string(hashedPass)
-
-	return nil
-}
-
-func (h *Handler) storeUser(newUser *models.User) error {
-
-	keyID := fmt.Sprintf("user%s", newUser.ID)
-	keyUsername := fmt.Sprintf("username:%s", newUser.Username)
-
-	pipe := h.client.Pipeline()
-	pipe.HMSet(keyID, map[string]interface{}{
-		"id":       newUser.ID,
-		"username": newUser.Username,
-		"password": newUser.Password,
-		"name":     newUser.Name,
-		"surname":  newUser.Surname,
-		"score":    "0",
-	})
-	pipe.Set(keyUsername, newUser.ID, 0)
-	_, err := pipe.Exec()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-//!SECTION: SERACH AND GET USER
-
-func (h *Handler) getIDByUsername(username string) (string, error) {
-	key := fmt.Sprintf("username:%s", username)
-	val, err := h.client.Get(key).Result()
+func (h *Handler) FetchUserField(token, field string) (string, error) {
+	key := fmt.Sprintf("user:%s", token)
+	val, err := h.client.HGet(key, field).Result()
 	if err != nil {
 		return "", err
 	}
+	if val == "" {
+		return "", fmt.Errorf("User not found")
+	}
+
 	return val, nil
 }
 
-func (h *Handler) getUserByID(id string) (*models.User, error) {
-	key := fmt.Sprintf("user%s", id)
-	val, err := h.client.HGetAll(key).Result()
+func (h *Handler) FetchUserInfo(token string) (*models.User, error) {
+	key := fmt.Sprintf("user:%s", token)
+	user, err := h.client.HGetAll(key).Result()
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-
-	if len(val) == 0 {
-		return nil, fmt.Errorf("User not found")
+	return mapToUser(user), nil
+}
+func mapToUser(val map[string]string) *models.User {
+	return &models.User{
+		ID:       val["id"],
+		Username: val["username"],
+		Name:     val["name"],
+		Surname:  val["surname"],
 	}
-
-	var user models.User
-	//,_
-	user.ID = val["id"]
-	user.Username = val["username"]
-	user.Name = val["name"]
-	user.Surname = val["surname"]
-
-	return &user, nil
 }
 
-func (h *Handler) getUserInfo(key, field string) (string, error) {
-	// key := fmt.Sprintf("user%d", id)
-	val, err := h.client.HGet(key, field).Result()
+// ! Login
+func (h *Handler) UserLogin(username, password string) (*string, error) {
+	token, err := h.GetTokenByUsername(username)
 	if err != nil {
-		log.Fatal(err)
-	}
-	if len(val) == 0 {
-		return "", fmt.Errorf("Value not found for field: %s", field)
-	}
-	return val, nil
-}
-
-// ! LOGIN USER HANDLER FUNCTIONS
-
-func (h *Handler) login(username, password string) (*models.User, error) {
-	userID, err := h.getIDByUsername(username)
-	if err != nil {
-		return nil, fmt.Errorf("Error retrieving user ID")
+		return nil, err
 	}
 
-	key := fmt.Sprintf("user%s", userID)
-	hashedPass, err := h.client.HGet(key, "password").Result()
+	hashedPass, err := h.FetchUserField(token, "password")
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 
@@ -166,84 +156,81 @@ func (h *Handler) login(username, password string) (*models.User, error) {
 		return nil, fmt.Errorf("Incorrect password")
 	}
 
-	_, err = h.client.Set("currentUserId", userID, 0).Result()
-	if err != nil {
-		return nil, fmt.Errorf("Error setting current user ID: %v", err)
-	}
-
-	user, err := h.getUserByID(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	return user, nil
+	return &token, nil
 }
 
-// ! UPDATE USER HANDLER FUNCTIONS
-func (h *Handler) update(userInfo *models.User) (*models.User, error) {
+// !Update
+func (h *Handler) UpdateUser(userInfo *models.User, token string) (*models.User, error) {
 
-	Id, err := h.client.Get("currentUserId").Result()
+	userKey := fmt.Sprintf("user:%s", token)
+	oldUsername, err := h.FetchUserField(token, "username")
 	if err != nil {
 		return nil, err
 	}
-
-	key := fmt.Sprintf("user%s", Id)
-	oldUsername, err := h.client.HGet(key, "username").Result()
-	if err != nil {
-		return nil, fmt.Errorf("Error retrieving old username: %w", err)
-	}
-
 	if userInfo.Username != "" {
 		usernameKey := fmt.Sprintf("username:%s", userInfo.Username)
 		_, err := h.client.Get(usernameKey).Result()
 		if err == redis.Nil {
-			h.client.Set(usernameKey, Id, 0)
-			h.client.HSet(key, "username", userInfo.Username)
+			h.client.Set(usernameKey, token, 0)
+			h.client.HSet(userKey, "username", userInfo.Username)
 			oldKey := fmt.Sprintf("username:%s", oldUsername)
 			h.client.Del(oldKey)
 		} else if err != nil {
 			return nil, fmt.Errorf("Unknown error: %w", err)
 		} else {
-			return nil, fmt.Errorf("Username already exists")
+			return nil, fmt.Errorf(UsernameAlreadyExists)
 		}
 	}
 
 	if userInfo.Password != "" {
-		hashedPass, err := bcrypt.GenerateFromPassword([]byte(userInfo.Password), bcrypt.DefaultCost)
+		hashedPass, err := HashPassword(userInfo.Password)
 		if err != nil {
-			return nil, fmt.Errorf("Error hashing password: %w", err)
+			return nil, err
 		}
-		h.client.HSet(key, "password", string(hashedPass))
+		h.client.HSet(userKey, "password", hashedPass)
 	}
 
 	if userInfo.Name != "" {
-		h.client.HSet(key, "name", userInfo.Name)
+		h.client.HSet(userKey, "name", userInfo.Name)
 	}
 
 	if userInfo.Surname != "" {
-		h.client.HSet(key, "surname", userInfo.Surname)
+		h.client.HSet(userKey, "surname", userInfo.Surname)
 	}
-
-	updatedUser, err := h.getUserByID(Id)
+	updatedUser, err := h.FetchUserInfo(token)
 	if err != nil {
-		return nil, fmt.Errorf("Error retrieving updated user: %w", err)
+		return nil, err
 	}
-
 	return updatedUser, nil
 }
 
-//! SECTION: SIMULATION HANDLER FUNCTIONS
-
+// ! SECTION: SIMULATION HANDLER FUNCTIONS
+// ?Len keys user:* and
 func (h *Handler) matchSimulation() error {
-	lastUserID, err := h.client.Get("user_id").Result()
+
+	val, err := h.client.Keys("user:*").Result()
 	if err != nil {
-		return fmt.Errorf("User count error: %v", err)
+		return err
+	}
+	userCount := len(val)
+	log.Println(userCount)
+	for i := 1; i < userCount; i++ {
+		for j := i + 1; j <= userCount; j++ {
+			var matchInfo models.MatchInfo
+			matchInfo.FirstUserId = i
+			matchInfo.FirstUserScore = rand.Intn(10)
+			matchInfo.SecondUserId = j
+			matchInfo.SecondUserScore = rand.Intn(10)
+
+			if err := h.UpdateScore(matchInfo); err != nil {
+				return fmt.Errorf("Failed to update score: %v", err)
+			}
+		}
 	}
 
-	lastID, err := strconv.Atoi(lastUserID)
-	if err != nil {
-		return fmt.Errorf("Conversion error: %v", err)
-	}
+	log.Printf("All players got matched.")
+	return nil
+
 	//! Eger yeni kullanıcı eklendiğinde sadece eklenenler arasında maç yaptırmak için.
 	/*
 		!func (h *Handler) matchSimulation(userCount int) error {
@@ -264,28 +251,13 @@ func (h *Handler) matchSimulation() error {
 		....
 		}
 	*/
-	for i := 1; i < lastID; i++ {
-		for j := i + 1; j <= lastID; j++ {
-			var matchInfo models.MatchInfo
-			matchInfo.FirstUserId = i
-			matchInfo.FirstUserScore = rand.Intn(10)
-			matchInfo.SecondUserId = j
-			matchInfo.SecondUserScore = rand.Intn(10)
 
-			if err := h.updateScore(matchInfo); err != nil {
-				return fmt.Errorf("Failed to update score: %v", err)
-			}
-		}
-	}
-
-	log.Printf("All players got matched.")
-	return nil
 }
 
 func (h *Handler) createSimUser() error {
 	const defaultPassword = "123456"
 
-	newUserID := h.nextID()
+	newUserID := h.generateNextUserID()
 	fmt.Println(newUserID)
 	if newUserID == "" {
 		return fmt.Errorf("UserID is empty")
@@ -304,79 +276,87 @@ func (h *Handler) createSimUser() error {
 		Name:     name,
 		Surname:  surname,
 	}
-	if err := h.storeUser(&simUser); err != nil {
+	_, err = h.storeUserInRedis(&simUser)
+	if err != nil {
 		return err
 	}
 	return nil
 }
 
-// !SECTION: MATCH USERS HANDLER.
-func (h *Handler) updateScore(match models.MatchInfo) error {
-	firstUserKey := fmt.Sprintf("user%d", match.FirstUserId)
-	secondUserKey := fmt.Sprintf("user%d", match.SecondUserId)
-
-	if exists, err := h.client.Exists(firstUserKey).Result(); err != nil || exists == 0 {
+// !Match
+func (h *Handler) UpdateScore(match models.MatchInfo) error {
+	if match.FirstUserId == match.SecondUserId {
+		return fmt.Errorf("User ID's are same")
+	}
+	firstUserToken, err := h.GetTokenByID(match.FirstUserId)
+	if err != nil {
 		return errors.New("First user does not exist")
 	}
-
-	if exists, err := h.client.Exists(secondUserKey).Result(); err != nil || exists == 0 {
+	secondUserToken, err := h.GetTokenByID(match.SecondUserId)
+	if err != nil {
 		return errors.New("Second user does not exist")
 	}
 
 	if match.FirstUserScore > match.SecondUserScore {
-		if err := h.incScore(firstUserKey, 3); err != nil {
+		if err := h.incScore(firstUserToken, 3); err != nil {
+			log.Println("birinci kullanici ")
 			return err
 		}
 	} else if match.FirstUserScore < match.SecondUserScore {
-		if err := h.incScore(secondUserKey, 3); err != nil {
+		if err := h.incScore(secondUserToken, 3); err != nil {
+			return err
+		}
+	} else {
+		err := h.incScore(firstUserToken, 1)
+		err = h.incScore(secondUserToken, 1)
+		if err != nil {
 			return err
 		}
 	}
-
-	if err := h.incScore(firstUserKey, 1); err != nil {
-		return err
-	}
-	if err := h.incScore(secondUserKey, 1); err != nil {
-		return err
-	}
-
 	return nil
 }
-
-func (h *Handler) incScore(userKey string, points int) error {
-	score, err := h.client.HIncrBy(userKey, "score", int64(points)).Result()
+func (h *Handler) incScore(token string, points int) error {
+	_, err := h.client.ZIncrBy("leaderboard", float64(points), token).Result()
 	if err != nil {
 		return err
 	}
-	_, err = h.client.ZAdd("leaderboard", redis.Z{
-		Score:  float64(score),
-		Member: userKey,
-	}).Result()
-
-	return err
+	return nil
 }
 
-func (h *Handler) leaderboardList(leaderboard []string) ([]map[string]interface{}, error) {
-	var list []map[string]interface{}
-	for _, user := range leaderboard {
-		rank, err := h.client.ZRevRank("leaderboard", user).Result()
-		id, err := h.getUserInfo(user, "id")
-		if err != nil {
-			return nil, err
-		}
-		username, err := h.getUserInfo(user, "username")
-		if err != nil {
-			return nil, err
-		}
+// ! Leaderboard
+type LeaderbordModel struct {
+	Rank     int     `json:"rank"`
+	Id       string  `json:"id"`
+	Username string  `json:"username"`
+	Score    float64 `json:"score"`
+}
 
-		userInfo := map[string]interface{}{
-			"rank":     rank + 1,
-			"id":       id,
-			"username": username,
-		}
-		list = append(list, userInfo)
+func (h *Handler) BuildLeaderboardList(leaderbordInfo models.LeaderbordInfo) ([]LeaderbordModel, error) {
+	var leaderboard []LeaderbordModel
+	startIndex := leaderbordInfo.Count * (leaderbordInfo.Page - 1)
+	endIndex := startIndex + leaderbordInfo.Count - 1
+
+	results, err := h.client.ZRevRangeWithScores("leaderboard", startIndex, endIndex).Result()
+	if err != nil {
+		return nil, err
 	}
-	return list, nil
+
+	for rank, user := range results {
+		key := fmt.Sprintf("user:%s", user.Member.(string))
+		var userInfo LeaderbordModel
+		fields, err := h.client.HMGet(key, "id", "username").Result()
+		if err != nil {
+			return nil, err
+		}
+		userInfo.Id = fields[0].(string)
+		userInfo.Username = fields[1].(string)
+		userInfo.Rank = int(startIndex) + rank + 1
+		userInfo.Score = user.Score
+
+		leaderboard = append(leaderboard, userInfo)
+	}
+
+	return leaderboard, nil
 }
 
 // ! RANDOM NAME AND SURNAME CREATE.
@@ -407,36 +387,92 @@ func randomNameAndSurname() (string, string) {
 
 // ! ERROR AND SUCCES RESPONS
 func errorResponse(w http.ResponseWriter, statusCode int, message string) {
-	errorResponse := models.ErrorRespons{Status: false, Message: message}
+	errorResponse := models.ErrorResponse{Status: false, Message: message}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(errorResponse)
 }
-func successResponse(w http.ResponseWriter, result models.SuccessRespons) {
+func successResponse(w http.ResponseWriter, result models.SuccessResponse) {
 	result.Status = true
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(201)
 	json.NewEncoder(w).Encode(result)
 }
 
-//!
-/*
-func (h *Handler) getUserScore(id int) (int, error) {
-	key := fmt.Sprintf("user%d", id)
-	val, err := h.client.HGet(key, "score").Result()
-	if err != nil {
-		return 0, fmt.Errorf("Could not get score: %v", err)
+// ! MIDDLEWARE : TOKEN AND VALIDATE
+// ? base64, jwt, go kütüphanlerini araştır
+func (h *Handler) createToken() string {
+	var token string
+	alfanumeric := "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	for {
+		for i := 1; i <= 4; i++ {
+			for j := 1; j <= 10; j++ {
+				randIndex := rand.Intn(len(alfanumeric) - 1)
+				randChar := string(alfanumeric[randIndex])
+				token = token + randChar
+			}
+			if i != 4 {
+				token = token + "-"
+			}
+		}
+		key := fmt.Sprintf("user:%s", token)
+		_, err := h.client.Get(key).Result()
+		if err == redis.Nil {
+			break
+		} else {
+			continue
+		}
 	}
-	if val == "" {
-		return 0, fmt.Errorf("Score not found")
+	return token
+}
+func (h *Handler) GetTokenByUsername(username string) (string, error) {
+	key := fmt.Sprintf("username:%s", username)
+	token, err := h.client.Get(key).Result()
+	if err == redis.Nil || token == "" {
+		return "", errors.New("Username not found")
+	} else if err != nil {
+		return "", err
 	}
+	return token, nil
+}
+func (h *Handler) GetTokenByID(id int) (string, error) {
+	key := fmt.Sprintf("userID:%d", id)
+	token, err := h.client.Get(key).Result()
+	if err == redis.Nil || token == "" {
+		return "", errors.New("User Id not found")
+	} else if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+func (h *Handler) ValidateToken(token string) bool {
+	key := fmt.Sprintf("user:%s", token)
+	if token == "" {
 
-	score, err := strconv.Atoi(val)
-	if err != nil {
-		return 0, fmt.Errorf("Could not convert score to integer: %v", err)
+		return false
 	}
+	isExist, _ := h.client.HExists(key, "id").Result()
+	log.Println(isExist)
+	if isExist == false {
+		return false
+	}
+	return true
+}
 
-		return score, nil
+func HashPassword(password string) (string, error) {
+	hashedPass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("Error hashing the password: %v", err)
+	}
+	return string(hashedPass), nil
+}
+
+func AuthMidware(handleFunc http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("Authorization")
+
+		key := fmt.Sprintf("user:%s", token)
+		log.Println(key)
+
 	}
 }
-*/

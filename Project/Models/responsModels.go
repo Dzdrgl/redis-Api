@@ -5,8 +5,7 @@ type SuccessResponse struct {
 	Result interface{} `json:"result"`
 }
 type ErrorResponse struct {
-	Status  bool   `json:"status"`
-	Message string `json:"message"`
+	ErrorMessage string `json:"message"`
 }
 
 type MatchInfo struct {
@@ -16,11 +15,16 @@ type MatchInfo struct {
 	SecondUserScore int `json:"seconduserscore"`
 }
 
-type LeaderbordInfo struct {
+type ListInfo struct {
 	Count int64 `json:"count"`
 	Page  int64 `json:"page"`
 }
 
 type SimulationInfo struct {
 	Usercount int `json:"usercount"`
+}
+type FriendRequest struct {
+	Id       string `json:"id"`
+	Username string `json:"username"`
+	Date     string `json:"date"`
 }

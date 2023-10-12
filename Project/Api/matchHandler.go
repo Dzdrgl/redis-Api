@@ -12,24 +12,12 @@ func (h *Handler) HandleLeaderboard(w http.ResponseWriter, r *http.Request) {
 	log.Println("Leaderboard - Called")
 	w.Header().Set(ContentType, ApplicationJSON)
 
-	token := r.Header.Get("Authorization")
-	if h.ValidateToken(token) == false {
-		errorResponse(w, http.StatusNotFound, InvalidTokenMsg)
-		return
-	}
-	if r.Method != http.MethodPost {
-		log.Println("Fetchleaderboard - Method not allowed")
-		errorResponse(w, http.StatusMethodNotAllowed, MethodNotAllowedMsg)
-		return
-	}
-
-	var leaderbordInfo models.LeaderbordInfo
+	var leaderbordInfo models.ListInfo
 	if err := json.NewDecoder(r.Body).Decode(&leaderbordInfo); err != nil {
 		log.Printf("Fetchleaderboard - Invalid JSON format")
 		errorResponse(w, http.StatusNotFound, InvalidJSONInputMsg)
 		return
 	}
-
 	if leaderbordInfo.Count == 0 || leaderbordInfo.Page == 0 {
 		log.Printf("Fetchleaderboard - The number of pages and users should not be zero..")
 		errorResponse(w, http.StatusNotFound, "The number of pages and users should not be zero.")
@@ -42,7 +30,6 @@ func (h *Handler) HandleLeaderboard(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusNotFound, "Could not build leaderboard list")
 		return
 	}
-
 	result := models.SuccessResponse{
 		Status: true,
 		Result: leaderboard,
@@ -55,22 +42,10 @@ func (h *Handler) HandleMatch(w http.ResponseWriter, r *http.Request) {
 	log.Println("GetMatchInfo - Called")
 	w.Header().Set(ContentType, ApplicationJSON)
 
-	token := r.Header.Get("Authorization")
-	if h.ValidateToken(token) == false {
-		errorResponse(w, http.StatusNotFound, InvalidTokenMsg)
-		return
-	}
-
-	if r.Method != http.MethodPost {
-		log.Printf("GetMatchInfo - Method not allowed: %s", r.Method)
-		errorResponse(w, http.StatusMethodNotAllowed, MethodErr)
-		return
-	}
-
 	var match models.MatchInfo
 	if err := json.NewDecoder(r.Body).Decode(&match); err != nil {
 		log.Printf("GetMatchInfo - Invalid JSON input")
-		errorResponse(w, http.StatusBadRequest, JsonErr)
+		errorResponse(w, http.StatusBadRequest, InvalidJSONInputMsg)
 		return
 	}
 

@@ -12,22 +12,10 @@ func (h *Handler) HandleSimulation(w http.ResponseWriter, r *http.Request) {
 	log.Println("Simulation - Called")
 	w.Header().Set(ContentType, ApplicationJSON)
 
-	// token := r.Header.Get("Authorization")
-	// if h.ValidateToken(token) == false {
-	// 	errorResponse(w, http.StatusNotFound, InvalidTokenMsg)
-	// 	return
-	// }
-
-	if r.Method != http.MethodPost {
-		log.Printf("Simulation - Method not allowed")
-		errorResponse(w, http.StatusMethodNotAllowed, MethodErr)
-		return
-	}
-
 	var simInfo models.SimulationInfo
 	if err := json.NewDecoder(r.Body).Decode(&simInfo); err != nil {
 		log.Printf("Simulation - Failed to decode JSON payload: %v", err)
-		errorResponse(w, http.StatusBadRequest, JsonErr)
+		errorResponse(w, http.StatusBadRequest, InvalidJSONInputMsg)
 		return
 	}
 	for i := 1; i <= simInfo.Usercount; i++ {
@@ -38,7 +26,6 @@ func (h *Handler) HandleSimulation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	log.Printf("Successfully created %d simulated user(s).", simInfo.Usercount)
-
 	if err := h.matchSimulation(); err != nil {
 		log.Printf("Simulation - %v", err)
 		errorResponse(w, http.StatusInternalServerError, "Simulation failed during match operation.")
